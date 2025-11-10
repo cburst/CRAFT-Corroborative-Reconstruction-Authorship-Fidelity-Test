@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+import csv
+import os
+import re
+import html
+from weasyprint import HTML
+
+# ---------- Configuration ---------- #
+INPUT_TSV = "students.tsv"               # Input TSV with 3 columns, no headers
+OUTPUT_TSV = "students_with_words.tsv"   # Output TSV with 10 extra columns
+QUIZ_PDF_DIR = "quiz"                    # Output directory for quiz PDFs
+KEY_PDF_DIR = "key"                      # Output directory for key PDFs
+TOP_N = 10                               # Number of longest words to pick
+# ----------------------------------- #
+
+# Match "words" (letters, digits, underscore) in Unicode
+WORD_RE = re.compile(r"\b\w+\b", flags=re.UNICODE)
+
+
+def get_top_words(text, n=10):
+    """
+    Return up to n longest unique words from text.
+
+    - Uniqueness is based on lowercase form.
+    - Sort by length (descending), then alphabetically (ascending).
+    - Final list is ordered by first appearance in the text.
+    """
+    tokens = WORD_RE.findall(text)
+    first_pos = {}   # lower-word -> first index in tokens
+    originals = {}   # lower-word -> original form as first seen
+
+    for idx, tok in enumerate(tokens):
+        key = tok.lower()
+        if key not in first_pos:
+            first_pos[key] = idx
+            originals[key] = tok
+
+    # Sort unique words by length desc, then alphabetical asc
+    unique_keys = list(first_pos.keys())
+    unique_sorted = sorted(unique_keys, key=lambda w: (-len(w), w))
+
+    # Take top N by that ranking
+    selected = unique_sorted[:n]
+
+    # Order the selected ones by first appearance in the text
+    ordered = sorted(selected, key=lambda k: first_pos[k])
+
+    # Return original-casing words
+    return [originals[k] for k in ordered]
+
+
+def blank_out_words(text, words):
+    """
+    Replace all occurrences of the given words (case-insensitive, whole words)
+    with "__" repeated for each character of the matched word.
+    """
+    if not words:
+        return text
+
+    escaped = [re.escape(w) for w in words]
+    pattern = r"\b(" + "|".join(escaped) + r")\b"
+    regex = re.compile(pattern, flags=re.IGNORECASE | re.UNICODE)
+
+    def repl(match):
+        word = match.group(0)
+        return "__" * len(word)
+
+    return regex.sub(repl, text)
+
+
+def underline_words_html(text, words):
+    """
+    Return an HTML-safe string where all occurrences of the given words
+    (case-insensitive, whole words) are wrapped in <u>...</u>,
+    and everything else is properly HTML-escaped.
+    """
+    if not words:
+        # Just escape the whole text
+        return html.escape(text)
+
+    escaped_words = [re.escape(w) for w in words]
+    pattern = r"\b(" + "|".join(escaped_words) + r")\b"
+    regex = re.compile(pattern, flags=re.IGNORECASE | re.UNICODE)
+
+    result_parts = []
+    last_end = 0
+
+    for match in regex.finditer(text):
+        start, end = match.start(), match.end()
+        # Add the text before the match, escaped
+        result_parts.append(html.escape(text[last_end:start]))
+        # Add the matched word, underlined and escaped
+        result_parts.append("<u>" + html.escape(match.group(0)) + "</u>")
+        last_end = end
+
+    # Add the remaining tail
+    result_parts.append(html.escape(text[last_end:]))
+
+    return "".join(result_parts)
+
+
+def sanitize_filename(name, student_number):
+    """
+    Make a safe filename:
+    - Keep Unicode characters (e.g., Korean names).
+    - Replace path separators and colon with underscore.
+    - If the result is empty, fall back to the student_number.
+    """
+    s = name.strip()
+    s = s.replace("/", "_").replace("\\", "_").replace(":", "_")
+
+    if not s:
+        s = student_number.strip()
+        s = s.replace("/", "_").replace("\\", "_").replace(":", "_")
+
+    if not s:
+        s = "student"
+
+    return s
+
+
+def make_quiz_pdf(student_number, name, gapped_text, outdir):
+    """
+    Generate the QUIZ PDF (longest words replaced by "__" sequences).
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    safe_name = sanitize_filename(name, student_number)
+    pdf_path = os.path.join(outdir, f"{safe_name}.pdf")
+
+    esc_name = html.escape(name)
+    esc_number = html.escape(student_number)
+    esc_text = html.escape(gapped_text)  # plain text → escaped
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{esc_name} - Quiz</title>
+<style>
+  @page {{
+    margin: 2cm;
+  }}
+  body {{
+    font-family: Arial, sans-serif;
+    font-size: 14pt;
+    line-height: 1.5;
+  }}
+  .header {{
+    font-weight: bold;
+    margin-bottom: 0.5em;
+  }}
+  .text {{
+    white-space: pre-wrap;  /* preserve line breaks in the original text */
+  }}
+</style>
+</head>
+<body>
+  <div class="header">
+    Name: {esc_name}<br>
+    Student Number: {esc_number}
+  </div>
+  <div class="text">
+{esc_text}
+  </div>
+</body>
+</html>
+"""
+
+    HTML(string=html_content).write_pdf(pdf_path)
+    print(f"✅ Generated QUIZ PDF: {pdf_path}")
+
+
+def make_key_pdf(student_number, name, key_text_html, outdir):
+    """
+    Generate the KEY PDF (longest words underlined, visible).
+    key_text_html must already be HTML-safe with <u> tags inserted.
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    safe_name = sanitize_filename(name, student_number)
+    pdf_path = os.path.join(outdir, f"{safe_name}.pdf")
+
+    esc_name = html.escape(name)
+    esc_number = html.escape(student_number)
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{esc_name} - Key</title>
+<style>
+  @page {{
+    margin: 2cm;
+  }}
+  body {{
+    font-family: Arial, sans-serif;
+    font-size: 15pt;
+    line-height: 1.5;
+  }}
+  .header {{
+    font-weight: bold;
+    margin-bottom: 0.5em;
+  }}
+  .text {{
+    white-space: pre-wrap;
+  }}
+</style>
+</head>
+<body>
+  <div class="header">
+    Name: {esc_name}<br>
+    Student Number: {esc_number}
+  </div>
+
+  <br>
+
+  <div class="text">
+{key_text_html}
+  </div>
+</body>
+</html>
+"""
+
+    HTML(string=html_content).write_pdf(pdf_path)
+    print(f"✅ Generated KEY PDF: {pdf_path}")
+
+
+def main():
+    # Create output directories if they don't exist
+    os.makedirs(QUIZ_PDF_DIR, exist_ok=True)
+    os.makedirs(KEY_PDF_DIR, exist_ok=True)
+
+    with open(INPUT_TSV, "r", encoding="utf-8", newline="") as infile, \
+         open(OUTPUT_TSV, "w", encoding="utf-8", newline="") as outfile:
+
+        reader = csv.reader(infile, delimiter="\t")
+        writer = csv.writer(outfile, delimiter="\t")
+
+        for row in reader:
+            # Expect exactly 3 columns: student_number, name, text
+            if len(row) < 3:
+                continue
+
+            student_number, name, text = row[0], row[1], row[2]
+
+            # 1) Get 10 longest unique words
+            top_words = get_top_words(text, TOP_N)
+
+            # 2) Append them as 10 extra columns in the output TSV
+            extra_cols = top_words + [""] * (TOP_N - len(top_words))
+            writer.writerow([student_number, name, text] + extra_cols)
+
+            # 3) Create gapped text for QUIZ
+            gapped_text = blank_out_words(text, top_words)
+
+            # 4) Create underlined HTML text for KEY
+            key_text_html = underline_words_html(text, top_words)
+
+            # 5) Make per-student PDFs
+            make_quiz_pdf(student_number, name, gapped_text, QUIZ_PDF_DIR)
+            make_key_pdf(student_number, name, key_text_html, KEY_PDF_DIR)
+
+
+if __name__ == "__main__":
+    main()
