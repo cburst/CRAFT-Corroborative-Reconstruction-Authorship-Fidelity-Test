@@ -24,7 +24,7 @@ except LookupError:
 # ===============================
 
 # 🔑 Hardcode your DeepSeek API key here
-DEEPSEEK_API_KEY = "your-DeepSeek-API-key-here"
+DEEPSEEK_API_KEY = "your DeepSeek API key here"
 
 # DeepSeek chat API endpoint & model
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
@@ -444,13 +444,48 @@ def generate_pdf_for_student(student_id, name, items, out_dir="pdfs_source_id"):
 
     html_parts = [
         "<html><head><meta charset='utf-8'><style>",
-        "@page { margin: 1.5cm; size: A4; }",
-        "body { font-family: Arial, sans-serif; font-size: 13pt; line-height: 1.3; }",
-        ".header { font-weight: bold; margin-bottom: 0.5em; }",
-        ".text { white-space: pre-wrap; margin: 0.3em 0; }",
+        "@page {",
+        "  size: A4;",
+        "  margin-top: 3.5cm;",   # generous top space
+        "  margin-right: 2cm;",
+        "  margin-bottom: 2cm;",
+        "  margin-left: 2cm;",
+        "  @top-left { content: element(page-header); }",
+        "}",
+        "body {",
+        "  font-family: Arial, sans-serif;",
+        "  font-size: 14pt;",
+        "  line-height: 1.5;",
+        "  margin: 0;",
+        "  padding: 0;",
+        "}",
+        # Generously sized, bold header matching your other scripts
+        ".page-header {",
+        "  position: running(page-header);",
+        "  font-size: 14pt;",
+        "  font-weight: bold;",
+        "  line-height: 1.5;",
+        "  text-align: left;",
+        "  margin: 0;",
+        "  padding: 0;",
+        "}",
+        ".title {",
+        "  font-weight: bold;",
+        "  margin-top: 1em;",
+        "  margin-bottom: 0.8em;",
+        "}",
+        ".text {",
+        "  white-space: pre-wrap;",
+        "  margin: 0.3em 0;",
+        "}",
         "</style></head><body>",
-        f"<div class='header'>Name: {esc_name}<br>Student Number: {esc_number}</div>",
-        "<div class='header'>Source Identification Quiz</div>"
+
+        # Repeated header (flush-left, bold, full-size)
+        f"<div class='page-header'>"
+        f"Name: {esc_name}<br>"
+        f"Student Number: {esc_number}<br>"
+        f"Authorship Recognizer"
+        f"</div>",
     ]
 
     labels = ["A", "B", "C"]
@@ -468,12 +503,12 @@ def generate_pdf_for_student(student_id, name, items, out_dir="pdfs_source_id"):
 
     HTML(string=html_doc).write_pdf(pdf_path)
     print(f"📝 PDF created: {pdf_path}")
-
+    
 # ===============================
 # 7. Process TSV sequentially
 # ===============================
 
-def process_tsv_for_source_id(input_tsv, pdf_dir="pdfs_source_id", answer_key_tsv="answer_key_source_id.tsv"):
+def process_tsv_for_source_id(input_tsv, pdf_dir="PDFs", answer_key_tsv="answer_key_authorship_recognizer.tsv"):
     labels = ["A", "B", "C"]
     with open(answer_key_tsv, "w", newline="", encoding="utf-8") as keyfile:
         keywriter = csv.writer(keyfile, delimiter="\t")
@@ -509,6 +544,6 @@ def process_tsv_for_source_id(input_tsv, pdf_dir="pdfs_source_id", answer_key_ts
 
 if __name__ == "__main__":
     INPUT_TSV = "students.tsv"   # student_id, name, text
-    PDF_DIR = "pdfs_source_id"
-    ANSWER_KEY = "answer_key_source_id.tsv"
+    PDF_DIR = "PDFs"
+    ANSWER_KEY = "answer_key_authorship_recognizer.tsv"
     process_tsv_for_source_id(INPUT_TSV, pdf_dir=PDF_DIR, answer_key_tsv=ANSWER_KEY)

@@ -10,19 +10,55 @@ INPUT_TSV = "students.tsv"               # Input TSV with 3 columns, no headers
 OUTPUT_TSV = "students_with_words.tsv"   # Output TSV with 10 extra columns
 QUIZ_PDF_DIR = "quiz"                    # Output directory for quiz PDFs
 KEY_PDF_DIR = "key"                      # Output directory for key PDFs
-TOP_N = 10                               # Number of longest words to pick
+TOP_N = 10                               # Number of words to pick
+FREQ_FILE = "wiki_freq.txt"             # Word frequency list: "word count" per line
+
+# Words to never use as targets (lowercased)
+AVOID_WORDS = {"hufs", "macalister", "minerva"}
 # ----------------------------------- #
 
 # Match "words" (letters, digits, underscore) in Unicode
 WORD_RE = re.compile(r"\b\w+\b", flags=re.UNICODE)
 
 
-def get_top_words(text, n=10):
+def load_frequency_dict(path=FREQ_FILE):
     """
-    Return up to n longest unique words from text.
+    Load a frequency dictionary from a file with lines like:
+    the 186631452
+    of 88349543
+    ...
+    Returns: dict[word_lower] = count (int)
+    """
+    freq = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                word = parts[0].lower()
+                try:
+                    count = int(parts[-1])
+                except ValueError:
+                    continue
+                # if duplicates, keep the first or last; doesn't matter much
+                freq[word] = count
+    except FileNotFoundError:
+        print(f"⚠️ Frequency file not found: {path}. All words treated as if not in list.")
+    return freq
 
-    - Uniqueness is based on lowercase form.
-    - Sort by length (descending), then alphabetically (ascending).
+
+def get_top_words(text, freq_dict, n=TOP_N):
+    """
+    Return up to n most *obscure* words from text, based on freq_dict.
+
+    - Only consider words that appear in freq_dict (i.e., in your word list).
+    - Exclude very short words (len <= 2).
+    - Exclude AVOID_WORDS (e.g. 'hufs', 'macalister', 'minerva').
+    - Sort by frequency ascending (rarest first).
     - Final list is ordered by first appearance in the text.
     """
     tokens = WORD_RE.findall(text)
@@ -35,15 +71,29 @@ def get_top_words(text, n=10):
             first_pos[key] = idx
             originals[key] = tok
 
-    # Sort unique words by length desc, then alphabetical asc
-    unique_keys = list(first_pos.keys())
-    unique_sorted = sorted(unique_keys, key=lambda w: (-len(w), w))
+    # Collect candidate words that are in freq_dict and not in avoid list
+    candidates = []
+    for key in first_pos.keys():
+        if len(key) <= 2:
+            continue
+        if key in AVOID_WORDS:
+            continue
+        if key not in freq_dict:
+            # Since you said "from the word list", we skip words not in freq_dict
+            continue
+        count = freq_dict.get(key, None)
+        if count is None:
+            continue
+        candidates.append((count, key))
 
-    # Take top N by that ranking
-    selected = unique_sorted[:n]
+    # Sort by frequency ascending (smaller count = rarer)
+    candidates.sort(key=lambda x: x[0])
 
-    # Order the selected ones by first appearance in the text
-    ordered = sorted(selected, key=lambda k: first_pos[k])
+    # Take top N by rarity
+    selected_keys = [key for _, key in candidates[:n]]
+
+    # Order selected words by first appearance in the text
+    ordered = sorted(selected_keys, key=lambda k: first_pos[k])
 
     # Return original-casing words
     return [originals[k] for k in ordered]
@@ -121,7 +171,7 @@ def sanitize_filename(name, student_number):
 
 def make_quiz_pdf(student_number, name, gapped_text, outdir):
     """
-    Generate the QUIZ PDF (longest words replaced by "__" sequences).
+    Generate the QUIZ PDF (target words replaced by "__" sequences).
     """
     os.makedirs(outdir, exist_ok=True)
 
@@ -158,7 +208,8 @@ def make_quiz_pdf(student_number, name, gapped_text, outdir):
 <body>
   <div class="header">
     Name: {esc_name}<br>
-    Student Number: {esc_number}
+    Student Number: {esc_number}<br>
+    Sentence Completer
   </div>
   <div class="text">
 {esc_text}
@@ -173,7 +224,7 @@ def make_quiz_pdf(student_number, name, gapped_text, outdir):
 
 def make_key_pdf(student_number, name, key_text_html, outdir):
     """
-    Generate the KEY PDF (longest words underlined, visible).
+    Generate the KEY PDF (target words underlined, visible).
     key_text_html must already be HTML-safe with <u> tags inserted.
     """
     os.makedirs(outdir, exist_ok=True)
@@ -227,6 +278,9 @@ def make_key_pdf(student_number, name, key_text_html, outdir):
 
 
 def main():
+    # Load frequency dictionary once
+    freq_dict = load_frequency_dict(FREQ_FILE)
+
     # Create output directories if they don't exist
     os.makedirs(QUIZ_PDF_DIR, exist_ok=True)
     os.makedirs(KEY_PDF_DIR, exist_ok=True)
@@ -238,16 +292,16 @@ def main():
         writer = csv.writer(outfile, delimiter="\t")
 
         for row in reader:
-            # Expect exactly 3 columns: student_number, name, text
+            # Expect at least 3 columns: student_number, name, text
             if len(row) < 3:
                 continue
 
             student_number, name, text = row[0], row[1], row[2]
 
-            # 1) Get 10 longest unique words
-            top_words = get_top_words(text, TOP_N)
+            # 1) Get TOP_N most obscure words (based on freq_dict)
+            top_words = get_top_words(text, freq_dict, TOP_N)
 
-            # 2) Append them as 10 extra columns in the output TSV
+            # 2) Append them as TOP_N extra columns in the output TSV
             extra_cols = top_words + [""] * (TOP_N - len(top_words))
             writer.writerow([student_number, name, text] + extra_cols)
 
