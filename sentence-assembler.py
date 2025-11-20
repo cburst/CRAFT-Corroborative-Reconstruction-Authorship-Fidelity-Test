@@ -274,7 +274,7 @@ def generate_pdf(student_id, name, full_text_modified, grid, out_dir="PDFs-sente
 
         <div>
             A section of the text has had 20 words removed.  
-            Use the 20 words in the box to reconstruct the passage.
+            Use the 20 words in the grid to reconstruct the text.
         </div>
 
         <div class='sentence'><b>Text:</b><br>{esc_text}</div>
