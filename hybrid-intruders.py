@@ -256,9 +256,12 @@ def generate_pdf_for_student(student_id, name, sentences, num_intruders,
     )
 
     # ============================
-    # ORIGINAL SENTENCE ORDER HINT
+    # ORIGINAL SENTENCE ORDER HINT (variable hints by sentence count)
     # ============================
-    if original_order_numbers and len(original_order_numbers) >= 4:
+    total_sents = len(original_order_numbers)
+
+    # Case A: 14 or more → first two + last two
+    if total_sents >= 14:
         first_num = original_order_numbers[0]
         second_num = original_order_numbers[1]
         second_last_num = original_order_numbers[-2]
@@ -266,13 +269,39 @@ def generate_pdf_for_student(student_id, name, sentences, num_intruders,
 
         html_parts.append(
             "<div class='text'><b>Original Sentence Order:</b> "
-            f"{first_num}, {second_num}, "
-            "<span style='border-bottom:1px solid #000; display:inline-block; width:300px;'>&nbsp;</span>, "
+            f"{first_num}, {second_num} "
+            "<span style='border-bottom:1px solid #000; display:inline-block; width:300px;'>&nbsp;</span> "
             f"{second_last_num}, {last_num}</div>"
         )
+
+    # Case B: 12–13 sentences → first + last only
+    elif total_sents in (12, 13):
+        first_num = original_order_numbers[0]
+        last_num = original_order_numbers[-1]
+
+        html_parts.append(
+            "<div class='text'><b>Original Sentence Order:</b> "
+            f"{first_num} "
+            "<span style='border-bottom:1px solid #000; display:inline-block; width:350px;'>&nbsp;</span> "
+            f"{last_num}</div>"
+        )
+
+    # Case C: exactly 11 → first only
+    elif total_sents == 11:
+        first_num = original_order_numbers[0]
+
+        html_parts.append(
+            "<div class='text'><b>Original Sentence Order:</b> "
+            f"{first_num} "
+            "<span style='border-bottom:1px solid #000; display:inline-block; width:420px;'>&nbsp;</span>"
+            "</div>"
+        )
+
+    # Case D: 10 or fewer → no hints
     else:
         html_parts.append(
-            "<div class='text'><b>Original Sentence Order:</b> _________________________________</div>"
+            "<div class='text'><b>Original Sentence Order:</b> "
+            "_________________________________</div>"
         )
 
     html_parts.append("</body></html>")
