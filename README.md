@@ -51,6 +51,6 @@ this script identifies the 10 rarest words in each text sample using the wikiped
 this script identifiesuses an LLM to create an accurate summary of the original text, as well as two summaries with minor detail changes, and the claimed author should be able to find the accuracy summar.   
 *requires weasyprint and a deepseek API key (compatible with other OpenAI format LLM APIs)
 
-**pipeline script**
+**pipeline script**  
 📜 test_pipeline.py  
 example python pipeline for organizing and merging pdf test files and answer keys created to facilitate the creation of a double-sided single page test for each student
